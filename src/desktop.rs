@@ -33,8 +33,16 @@ const LVM_FIRST: u32 = 0x1000;
 const LVM_GETITEMCOUNT: u32 = LVM_FIRST + 4;
 const LVM_SETITEMPOSITION: u32 = LVM_FIRST + 15;
 const LVM_ARRANGE: u32 = LVM_FIRST + 22;
+const LVM_GETEXTENDEDLISTVIEWSTYLE: u32 = LVM_FIRST + 55; // 0x1037
+const LVM_SETEXTENDEDLISTVIEWSTYLE: u32 = LVM_FIRST + 54; // 0x1036
 const GWL_STYLE: i32 = -16;
 const LVS_AUTOARRANGE: isize = 0x100;
+const LVS_EX_SNAPTOGRID: isize = 0x0008_0000;
+const LVS_EX_AUTOAUTOARRANGE: isize = 0x0100_0000;
+
+/// 保存原始扩展样式，用于退出时恢复
+static mut SAVED_EX_STYLE: isize = 0;
+static mut HAS_SAVED_EX_STYLE: bool = false;
 
 fn find_desktop_listview() -> Option<HWND> {
     unsafe {
@@ -86,6 +94,8 @@ fn find_desktop_listview() -> Option<HWND> {
 fn lv_disable_auto_arrange(lv: HWND) {
     unsafe {
         let h = lv.0 as isize;
+
+        // 1. 禁用基础样式 LVS_AUTOARRANGE（自动排列）
         let style = GetWindowLongPtrW(h, GWL_STYLE);
         log!("[info] ListView style=0x{:X}, has_auto={}", style, style & LVS_AUTOARRANGE != 0);
         if style & LVS_AUTOARRANGE != 0 {
@@ -94,16 +104,55 @@ fn lv_disable_auto_arrange(lv: HWND) {
         } else {
             log!("[info] LVS_AUTOARRANGE 原本就未设置");
         }
+
+        // 2. 禁用扩展样式 LVS_EX_SNAPTOGRID（将图标与网格对齐）
+        let ex_style = SendMessageW(h, LVM_GETEXTENDEDLISTVIEWSTYLE, 0, 0);
+        log!("[info] ListView ex_style=0x{:X}, has_snap={}", ex_style, ex_style & LVS_EX_SNAPTOGRID != 0);
+
+        // 仅首次保存原始扩展样式，避免反复调用覆盖
+        if !HAS_SAVED_EX_STYLE {
+            SAVED_EX_STYLE = ex_style;
+            HAS_SAVED_EX_STYLE = true;
+            log!("[info] 已保存原始扩展样式: 0x{:X}", ex_style);
+        }
+
+        let mut need_clear = 0isize;
+        if ex_style & LVS_EX_SNAPTOGRID != 0 {
+            need_clear |= LVS_EX_SNAPTOGRID;
+        }
+        if ex_style & LVS_EX_AUTOAUTOARRANGE != 0 {
+            need_clear |= LVS_EX_AUTOAUTOARRANGE;
+        }
+
+        if need_clear != 0 {
+            SendMessageW(h, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, ex_style & !need_clear);
+            log!("[ok] 已禁用扩展样式: 0x{:X}", need_clear);
+        } else {
+            log!("[info] 无需禁用的扩展样式");
+        }
     }
 }
 
 fn lv_enable_auto_arrange(lv: HWND) {
     unsafe {
         let h = lv.0 as isize;
+
+        // 1. 恢复基础样式 LVS_AUTOARRANGE
         let style = GetWindowLongPtrW(h, GWL_STYLE);
         SetWindowLongPtrW(h, GWL_STYLE, style | LVS_AUTOARRANGE);
+
+        // 2. 恢复扩展样式（网格对齐等）
+        if HAS_SAVED_EX_STYLE {
+            let saved = SAVED_EX_STYLE;
+            SendMessageW(h, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, saved);
+            log!("[ok] 已恢复扩展样式: 0x{:X}", saved);
+            HAS_SAVED_EX_STYLE = false;
+        }
+
+        // 3. 重新排列图标
         SendMessageW(h, LVM_ARRANGE, 0, 0);
         InvalidateRect(h, std::ptr::null(), 1);
+
         log!("[ok] 已恢复 LVS_AUTOARRANGE + LVM_ARRANGE");
     }
 }
