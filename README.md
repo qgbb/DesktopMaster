@@ -61,6 +61,10 @@ cargo run
 
 编译产物位于 `target/debug/desktop-clear-master.exe`（Debug）或 `target/release/desktop-clear-master.exe`（Release）。
 
+## 预编译下载
+
+前往 [GitHub Releases](https://github.com/qgbb/DesktopMaster/releases) 页面下载最新版本的 `desktop-clear-master.exe`，双击即可运行。
+
 ## 使用说明
 
 1. 启动程序后显示 **"桌面整理大师"** 主窗口
